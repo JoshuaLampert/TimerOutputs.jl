@@ -70,8 +70,8 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
     midrule       = linechars == :unicode ? "─" : "-"
     topbottomrule = linechars == :unicode ? "─" : "-"
     sec_ncalls = string(rpad("Section", name_length, " "), " ncalls  ")
-    time_headers = "   time    %tot" * (compact ? "" : "     avg")
-    alloc_headers = allocations ? ("  alloc    %tot" * (compact ? "" : "      avg")) : ""
+    time_headers = "   time    %tot" * (compact ? "" : "     avg     min     max  median")
+    alloc_headers = allocations ? ("  alloc    %tot" * (compact ? "" : "      avg      min      max   median")) : ""
     total_table_width = sum(textwidth.((sec_ncalls, time_headers, alloc_headers))) + 3
 
     # Just hardcoded shit to make things look nice
@@ -90,7 +90,7 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
         if compact
             time_header       = "      Time     "
         else
-            time_header       = "         Time          "
+            time_header       = "                      Time                        "
         end
 
         time_underline = midrule^textwidth(time_header)
@@ -98,7 +98,7 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
         if compact
             allocation_header       = "  Allocations  "
         else
-            allocation_header = "       Allocations      "
+            allocation_header = "                   Allocations                  "
         end
 
         alloc_underline = midrule^textwidth(allocation_header)
@@ -139,7 +139,13 @@ end
 function _print_timer(io::IO, to::TimerOutput, ∑t::Integer, ∑b::Integer, indent::Integer, name_length, allocations, sortby, compact)
     accum_data = to.accumulated_data
     t = accum_data.time
+    tmin = accum_data.mintime
+    tmax = accum_data.maxtime
+    tmedian = query(accum_data.quantiletime)
     b = accum_data.allocs
+    bmin = accum_data.minallocs
+    bmax = accum_data.maxallocs
+    bmedian = query(accum_data.quantileallocs)
 
     name = truncdots(to.name, name_length - indent)
     print(io, " ")
@@ -150,11 +156,18 @@ function _print_timer(io::IO, to::TimerOutput, ∑t::Integer, ∑b::Integer, ind
     print(io, "   ", lpad(prettytime(t),        6, " "))
     print(io, "  ",  lpad(prettypercent(t, ∑t), 5, " "))
     !compact && print(io, "  ",  rpad(prettytime(t / nc), 6, " "))
+    !compact && print(io, "  ",  rpad(prettytime(tmin), 6, " "))
+    !compact && print(io, "  ",  rpad(prettytime(tmax), 6, " "))
+    !compact && print(io, "  ",  rpad(prettytime(tmedian), 6, " "))
 
     if allocations
     print(io, "   ", rpad(prettymemory(b),      9, " "))
     print(io, rpad(prettypercent(b, ∑b), 5, " "))
     !compact && print(io, "  ",    lpad(prettymemory(b / nc), 5, " "))
+    !compact && print(io, "  ",    lpad(prettymemory(bmin), 5, " "))
+    !compact && print(io, "  ",    lpad(prettymemory(bmax), 5, " "))
+    !compact && print(io, "  ",    lpad(prettymemory(bmedian), 5, " "))
+
     end
     print(io, "\n")
 

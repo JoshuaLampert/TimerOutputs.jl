@@ -671,7 +671,13 @@ end
         @test TimerOutputs.ncalls(to) == d["n_calls"]
         @test TimerOutputs.totallocated(to) == d["total_allocated_bytes"]
         @test TimerOutputs.allocated(to) == d["allocated_bytes"]
+        @test TimerOutputs.minallocated(to) == d["minallocated_bytes"]
+        @test TimerOutputs.maxallocated(to) == d["maxallocated_bytes"]
+        @test TimerOutputs.medianallocated(to) == d["medianallocated_bytes"]
         @test TimerOutputs.time(to) == d["time_ns"]
+        @test TimerOutputs.mintime(to) == d["mintime_ns"]
+        @test TimerOutputs.maxtime(to) == d["maxtime_ns"]
+        @test TimerOutputs.mediantime(to) == d["mediantime_bytes"]
         for ((k1, timer), (k2, obj)) in zip(to.inner_timers, d["inner_timers"])
             @test k1 == k2
             compare(timer, obj)

@@ -4,17 +4,29 @@
 mutable struct TimeData
     ncalls::Int
     time::Int64
+    mintime::Int64
+    maxtime::Int64
+    quantiletime::GKSummary{UInt64}
     allocs::Int64
+    minallocs::Int64
+    maxallocs::Int64
+    quantileallocs::GKSummary{Int64}
     firstexec::Int64
 end
-TimeData(ncalls, time, allocs) = TimeData(ncalls, time, allocs, time)
-Base.copy(td::TimeData) = TimeData(td.ncalls, td.time, td.allocs)
-TimeData() = TimeData(0, 0, 0, time_ns())
+TimeData(ncalls, time, mintime, maxtime, quantiletime, allocs, minallocs, maxallocs, quantileallocs) = TimeData(ncalls, time, mintime, maxtime, quantiletime, allocs, minallocs, maxallocs, quantileallocs, time)
+Base.copy(td::TimeData) = TimeData(td.ncalls, td.time, td.mintime, td.maxtime, td.quantiletime, td.allocs, td.minallocs, td.maxallocs, td.quantileallocs)
+TimeData() = TimeData(0, 0, typemax(Int64), 0, GKSummary(eps = 0.1, T = UInt64), 0, typemax(Int64), 0, GKSummary(eps = 0.1, T = Int64), time_ns())
 
 function Base.:+(self::TimeData, other::TimeData)
     TimeData(self.ncalls + other.ncalls,
              self.time + other.time,
+             min(self.mintime, other.mintime),
+             max(self.maxtime, other.maxtime),
+             merge(self.quantiletime, other.quantiletime),
              self.allocs + other.allocs,
+             min(self.minallocs, other.minallocs),
+             max(self.maxallocs, other.maxallocs),
+             merge(self.quantileallocs, other.quantileallocs),
              min(self.firstexec, other.firstexec))
 end
 
@@ -34,7 +46,8 @@ mutable struct TimerOutput
     prev_timer::Union{TimerOutput,Nothing}
 
     function TimerOutput(label::String = "root")
-        start_data = TimeData(0, time_ns(), gc_bytes())
+        # mintime, maxtime, quantiletime, minallocs, maxallocs and quantileallocs from the start_data is not needed
+        start_data = TimeData(0, time_ns(), 0, 0, GKSummary(eps = 0.1, T = UInt64), gc_bytes(), 0, 0, GKSummary(eps = 0.1, T = Int64))
         accumulated_data = TimeData()
         inner_timers = Dict{String,TimerOutput}()
         timer_stack = TimerOutput[]
@@ -157,7 +170,13 @@ end
 # Accessors
 ncalls(to::TimerOutput)    = to.accumulated_data.ncalls
 allocated(to::TimerOutput) = to.accumulated_data.allocs
+minallocated(to::TimerOutput) = to.accumulated_data.minallocs
+maxallocated(to::TimerOutput) = to.accumulated_data.maxallocs
+quantileallocated(to::TimerOutput, phi = 0.5) = query(to.accumulated_data.quantileallocs, phi)
 time(to::TimerOutput) = to.accumulated_data.time
+mintime(to::TimerOutput) = to.accumulated_data.mintime
+maxtime(to::TimerOutput) = to.accumulated_data.maxtime
+quantiletime(to::TimerOutput, phi = 0.5) = query(to.accumulated_data.quantiletime, phi)
 totallocated(to::TimerOutput) = totmeasured(to)[2]
 tottime(to::TimerOutput) = totmeasured(to)[1]
 
@@ -279,8 +298,16 @@ function timer_expr_func(m::Module, is_debug::Bool, to, expr::Expr, label=nothin
 end
 
 function do_accumulate!(accumulated_data, t₀, b₀)
-    accumulated_data.time += time_ns() - t₀
-    accumulated_data.allocs += gc_bytes() - b₀
+    dt = time_ns() - t₀
+    accumulated_data.time += dt
+    accumulated_data.mintime = min(accumulated_data.mintime, dt)
+    accumulated_data.maxtime = max(accumulated_data.maxtime, dt)
+    add!(accumulated_data.quantiletime, dt)
+    db = gc_bytes() - b₀
+    accumulated_data.allocs += db
+    accumulated_data.minallocs = min(accumulated_data.minallocs, db)
+    accumulated_data.maxallocs = max(accumulated_data.maxallocs, db)
+    add!(accumulated_data.quantileallocs, db)
     accumulated_data.ncalls += 1
 end
 
@@ -288,7 +315,7 @@ end
 reset_timer!() = reset_timer!(DEFAULT_TIMER)
 function reset_timer!(to::TimerOutput)
     to.inner_timers = Dict{String,TimerOutput}()
-    to.start_data = TimeData(0, time_ns(), gc_bytes())
+    to.start_data = TimeData(0, time_ns(), 0, 0, GKSummary(eps = 0.1, T = UInt64), gc_bytes(), 0, 0, GKSummary(eps = 0.1, T = Int64))
     to.accumulated_data = TimeData()
     to.prev_timer_label = ""
     to.prev_timer = nothing
@@ -307,8 +334,16 @@ function timeit(f::Function, to::TimerOutput, label::String)
     try
         val = f()
     finally
-        accumulated_data.time += time_ns() - t₀
-        accumulated_data.allocs += gc_bytes() - b₀
+        dt = time_ns() - t₀
+        accumulated_data.time += dt
+        accumulated_data.mintime = min(accumulated_data.mintime, dt)
+        accumulated_data.maxtime = max(accumulated_data.maxtime, dt)
+        add!(accumulated_data.quantiletime, dt)
+        db = gc_bytes() - b₀
+        accumulated_data.allocs += db
+        accumulated_data.minallocs = min(accumulated_data.minallocs, db)
+        accumulated_data.maxallocs = max(accumulated_data.maxallocs, db)
+        add!(accumulated_data.quantileallocs, db)
         accumulated_data.ncalls += 1
         pop!(to)
     end
@@ -372,7 +407,8 @@ function complement!(to::TimerOutput)
     tot_allocs = max(tot_allocs, 0)
     if !(to.name in ["root", "Flattened"])
         name = string("~", to.name, "~")
-        timer = TimerOutput(to.start_data, TimeData(max(1,to.accumulated_data.ncalls), tot_time, tot_allocs), Dict{String,TimerOutput}(), TimerOutput[], name, false, true, (tot_time, tot_allocs), to.name, to)
+        # TODO: min/max/median don't really have a complement...
+        timer = TimerOutput(to.start_data, TimeData(max(1,to.accumulated_data.ncalls), tot_time, 0, 0, GKSummary(eps = 0.1), tot_allocs, 0, 0, GKSummary(eps = 0.1)), Dict{String,TimerOutput}(), TimerOutput[], name, false, true, (tot_time, tot_allocs), to.name, to)
         to.inner_timers[name] = timer
     end
     return to

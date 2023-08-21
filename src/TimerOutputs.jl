@@ -3,6 +3,7 @@ module TimerOutputs
 using ExprTools
 
 import Base: show, time_ns
+using GKQuantile: GKSummary, add!, query
 export TimerOutput, @timeit, @timeit_debug, reset_timer!, print_timer, timeit,
                     enable_timer!, disable_timer!, @notimeit, get_timer
 
