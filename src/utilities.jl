@@ -122,7 +122,13 @@ function todict(to::TimerOutput)
     return Dict{String,Any}(
         "n_calls" => ncalls(to),
         "time_ns" => time(to),
+        "mintime_ns" => mintime(to),
+        "maxtime_ns" => maxtime(to),
+        "mediantime_ns" => quantiletime(to),
         "allocated_bytes" => allocated(to),
+        "minallocated_bytes" => minallocated(to),
+        "maxallocated_bytes" => maxallocated(to),
+        "medianallocated_ns" => quantileallocated(to),
         "total_allocated_bytes" => totallocated(to),
         "total_time_ns" => tottime(to),
         "inner_timers" => Dict{String, Any}(k => todict(v) for (k,v) in to.inner_timers)

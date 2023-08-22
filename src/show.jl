@@ -70,8 +70,8 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
     midrule       = linechars == :unicode ? "─" : "-"
     topbottomrule = linechars == :unicode ? "─" : "-"
     sec_ncalls = string(rpad("Section", name_length, " "), " ncalls  ")
-    time_headers = "   time    %tot" * (compact ? "" : "     avg")
-    alloc_headers = allocations ? ("  alloc    %tot" * (compact ? "" : "      avg")) : ""
+    time_headers = "   time    %tot" * (compact ? "" : "     avg     min     max  median")
+    alloc_headers = allocations ? ("  alloc    %tot" * (compact ? "" : "      avg      min      max   median")) : ""
     total_table_width = sum(textwidth.((sec_ncalls, time_headers, alloc_headers))) + 3
 
     # Just hardcoded shit to make things look nice
@@ -90,7 +90,7 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
         if compact
             time_header       = "      Time     "
         else
-            time_header       = "         Time          "
+            time_header       = "                     Time                      "
         end
 
         time_underline = midrule^textwidth(time_header)
@@ -98,7 +98,7 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
         if compact
             allocation_header       = "  Allocations  "
         else
-            allocation_header = "       Allocations      "
+            allocation_header = "                    Allocations                    "
         end
 
         alloc_underline = midrule^textwidth(allocation_header)
@@ -137,24 +137,35 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
 end
 
 function _print_timer(io::IO, to::TimerOutput, ∑t::Integer, ∑b::Integer, indent::Integer, name_length, allocations, sortby, compact)
-    accum_data = to.accumulated_data
-    t = accum_data.time
-    b = accum_data.allocs
+    t = time(to)
+    tmin = mintime(to)
+    tmax = maxtime(to)
+    tmedian = quantiletime(to)
+    b = allocated(to)
+    bmin = minallocated(to)
+    bmax = maxallocated(to)
+    bmedian = quantileallocated(to)
 
     name = truncdots(to.name, name_length - indent)
     print(io, " ")
-    nc = accum_data.ncalls
+    nc = ncalls(to)
     print(io, " "^indent, rpad(name, name_length + 2 - indent))
     print(io, lpad(prettycount(nc), 5, " "))
 
     print(io, "   ", lpad(prettytime(t),        6, " "))
     print(io, "  ",  lpad(prettypercent(t, ∑t), 5, " "))
     !compact && print(io, "  ",  rpad(prettytime(t / nc), 6, " "))
+    !compact && print(io, "  ",  rpad(prettytime(tmin), 6, " "))
+    !compact && print(io, "  ",  rpad(prettytime(tmax), 6, " "))
+    !compact && print(io, "  ",  rpad(prettytime(tmedian), 6, " "))
 
     if allocations
     print(io, "   ", rpad(prettymemory(b),      9, " "))
     print(io, rpad(prettypercent(b, ∑b), 5, " "))
     !compact && print(io, "  ",    lpad(prettymemory(b / nc), 5, " "))
+    !compact && print(io, "  ",    lpad(prettymemory(bmin), 5, " "))
+    !compact && print(io, "  ",    lpad(prettymemory(bmax), 5, " "))
+    !compact && print(io, "  ",    lpad(prettymemory(bmedian), 5, " "))
     end
     print(io, "\n")
 
