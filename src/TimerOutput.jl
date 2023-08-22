@@ -172,11 +172,11 @@ ncalls(to::TimerOutput)    = to.accumulated_data.ncalls
 allocated(to::TimerOutput) = to.accumulated_data.allocs
 minallocated(to::TimerOutput) = to.accumulated_data.minallocs
 maxallocated(to::TimerOutput) = to.accumulated_data.maxallocs
-quantileallocated(to::TimerOutput, phi = 0.5) = query(to.accumulated_data.quantileallocs, phi)
+quantileallocated(to::TimerOutput, phi = 0.5) = query(to.accumulated_data.quantileallocs, phi = phi)
 time(to::TimerOutput) = to.accumulated_data.time
 mintime(to::TimerOutput) = to.accumulated_data.mintime
 maxtime(to::TimerOutput) = to.accumulated_data.maxtime
-quantiletime(to::TimerOutput, phi = 0.5) = query(to.accumulated_data.quantiletime, phi)
+quantiletime(to::TimerOutput, phi = 0.5) = query(to.accumulated_data.quantiletime, phi = phi)
 totallocated(to::TimerOutput) = totmeasured(to)[2]
 tottime(to::TimerOutput) = totmeasured(to)[1]
 
@@ -334,17 +334,7 @@ function timeit(f::Function, to::TimerOutput, label::String)
     try
         val = f()
     finally
-        dt = time_ns() - t₀
-        accumulated_data.time += dt
-        accumulated_data.mintime = min(accumulated_data.mintime, dt)
-        accumulated_data.maxtime = max(accumulated_data.maxtime, dt)
-        add!(accumulated_data.quantiletime, dt)
-        db = gc_bytes() - b₀
-        accumulated_data.allocs += db
-        accumulated_data.minallocs = min(accumulated_data.minallocs, db)
-        accumulated_data.maxallocs = max(accumulated_data.maxallocs, db)
-        add!(accumulated_data.quantileallocs, db)
-        accumulated_data.ncalls += 1
+        do_accumulate!(accumulated_data, t₀, b₀)
         pop!(to)
     end
     return val

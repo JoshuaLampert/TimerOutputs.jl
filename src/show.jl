@@ -90,7 +90,7 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
         if compact
             time_header       = "      Time     "
         else
-            time_header       = "                      Time                        "
+            time_header       = "                     Time                      "
         end
 
         time_underline = midrule^textwidth(time_header)
@@ -98,7 +98,7 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
         if compact
             allocation_header       = "  Allocations  "
         else
-            allocation_header = "                   Allocations                  "
+            allocation_header = "                    Allocations                    "
         end
 
         alloc_underline = midrule^textwidth(allocation_header)
@@ -137,19 +137,18 @@ function print_header(io, Δt, Δb, ∑t, ∑b, name_length, header, allocations
 end
 
 function _print_timer(io::IO, to::TimerOutput, ∑t::Integer, ∑b::Integer, indent::Integer, name_length, allocations, sortby, compact)
-    accum_data = to.accumulated_data
-    t = accum_data.time
-    tmin = accum_data.mintime
-    tmax = accum_data.maxtime
-    tmedian = query(accum_data.quantiletime)
-    b = accum_data.allocs
-    bmin = accum_data.minallocs
-    bmax = accum_data.maxallocs
-    bmedian = query(accum_data.quantileallocs)
+    t = time(to)
+    tmin = mintime(to)
+    tmax = maxtime(to)
+    tmedian = quantiletime(to)
+    b = allocated(to)
+    bmin = minallocated(to)
+    bmax = maxallocated(to)
+    bmedian = quantileallocated(to)
 
     name = truncdots(to.name, name_length - indent)
     print(io, " ")
-    nc = accum_data.ncalls
+    nc = ncalls(to)
     print(io, " "^indent, rpad(name, name_length + 2 - indent))
     print(io, lpad(prettycount(nc), 5, " "))
 
