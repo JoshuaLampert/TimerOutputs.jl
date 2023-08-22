@@ -325,13 +325,7 @@ function timeit(f::Function, to::TimerOutput, label::String)
     try
         val = f()
     finally
-        dt = time_ns() - t₀
-        accumulated_data.time += time_ns() - t₀
-        fit!(accumulated_data.timeseries, dt)
-        db = gc_bytes() - b₀
-        accumulated_data.allocs += db
-        fit!(accumulated_data.allocsseries, db)
-        accumulated_data.ncalls += 1
+        do_accumulate!(accumulated_data, t₀, b₀)
         pop!(to)
     end
     return val
