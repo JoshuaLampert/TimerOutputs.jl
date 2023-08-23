@@ -8,7 +8,7 @@ function Base.show(io::IO, to::TimerOutput; allocations::Bool = true, sortby::Sy
     sortby  in (:time, :ncalls, :allocations, :name, :firstexec) || throw(ArgumentError("sortby should be :time, :allocations, :ncalls, :name, or :firstexec, got $sortby"))
     linechars in (:unicode, :ascii)                  || throw(ArgumentError("linechars should be :unicode or :ascii, got $linechars"))
 
-    t₀, b₀ = to.start_data.time, to.start_data.allocs
+    t₀, b₀ = time(to.start_data), allocated(to.start_data)
     t₁, b₁ = time_ns(), gc_bytes()
     Δt, Δb = t₁ - t₀, b₁ - b₀
     ∑t, ∑b = to.flattened ? to.totmeasured : totmeasured(to)
@@ -44,9 +44,9 @@ function Base.show(io::IO, to::TimerOutput; allocations::Bool = true, sortby::Sy
 end
 
 function sortf(x, sortby)
-    sortby == :time        && return x.accumulated_data.time
-    sortby == :ncalls      && return x.accumulated_data.ncalls
-    sortby == :allocations && return x.accumulated_data.allocs
+    sortby == :time        && return time(x)
+    sortby == :ncalls      && return ncalls(x)
+    sortby == :allocations && return allocated(x)
     sortby == :name        && return x.name
     sortby == :firstexec   && return x.accumulated_data.firstexec
     error("internal error")

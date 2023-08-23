@@ -3,7 +3,7 @@ module TimerOutputs
 using ExprTools
 
 import Base: show, time_ns
-using OnlineStats: Series, Extrema, Quantile, fit!, value
+using OnlineStats: Group, Series, Sum, Extrema, Quantile, fit!, value, nobs
 export TimerOutput, @timeit, @timeit_debug, reset_timer!, print_timer, timeit,
                     enable_timer!, disable_timer!, @notimeit, get_timer
 

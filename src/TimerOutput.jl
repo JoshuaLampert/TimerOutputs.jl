@@ -1,30 +1,25 @@
 ############
 # TimeData #
 ############
-# TODO: Could remove `ncalls` (already recorded in `Series`), `time` and `allocs` and use `Sum()` inside the `Series` (and maybe `Mean()`)
+# Compute sum (also used for mean), min, max and median
+statsseries(initsum) = Series(Sum(initsum, 0), Extrema(), Quantile([0.5]))
+statsgroup(time, allocs) = Group(time = statsseries(time), allocs = statsseries(allocs))
 mutable struct TimeData
-    ncalls::Int
-    time::Int64
-    timeseries::Series
-    allocs::Int64
-    allocsseries::Series
+    statsgroup::Group
     firstexec::Int64
 end
-TimeData(ncalls, time, timeseries, allocs, allocsseries) = TimeData(ncalls, time, timeseries, allocs, allocsseries, time)
-Base.copy(td::TimeData) = TimeData(td.ncalls, td.time, td.timeseries, td.allocs, td.allocsseries)
-# TODO: Maybe allow custom statistics to be recorded? So something Like `TimeData(Extrema(), Quantile([0.5, 0.9]), Variance())`
-TimeData() = TimeData(0, 0, Series(Extrema(), Quantile([0.5])), 0, Series(Extrema(), Quantile([0.5])), time_ns())
+TimeData(statsgroup) = TimeData(statsgroup, value(value(statsgroup).time)[1])
+Base.copy(td::TimeData) = TimeData(td.statsgroup)
+# TODO: Maybe allow custom statistics (in addition to `Sum()`) to be recorded? So something Like `TimeData(Extrema(), Quantile([0.5, 0.9]), Variance())`
+TimeData() = TimeData(statsgroup(0, 0), time_ns())
 
 function Base.:+(self::TimeData, other::TimeData)
-    TimeData(self.ncalls + other.ncalls,
-             self.time + other.time,
-             # TODO: merging quantiles does not work
-             merge(self.timeseries, other.timeseries),
-             self.allocs + other.allocs,
-             # TODO: merging quantiles does not work
-             merge(self.allocsseries, other.allocsseries),
+    TimeData(merge(self.statsgroup, other.statsgroup), # TODO: merging quantiles does not work
              min(self.firstexec, other.firstexec))
 end
+
+time(data::TimeData) = value(value(data.statsgroup).time)[1]
+allocated(data::TimeData) = value(value(data.statsgroup).allocs)[1]
 
 ###############
 # TimerOutput #
@@ -42,7 +37,7 @@ mutable struct TimerOutput
     prev_timer::Union{TimerOutput,Nothing}
 
     function TimerOutput(label::String = "root")
-        start_data = TimeData(0, time_ns(), Series(Extrema(), Quantile([0.5])), gc_bytes(), Series(Extrema(), Quantile([0.5])))
+        start_data = TimeData(statsgroup(time_ns(), gc_bytes()))
         accumulated_data = TimeData()
         inner_timers = Dict{String,TimerOutput}()
         timer_stack = TimerOutput[]
@@ -114,9 +109,8 @@ Base.pop!(to::TimerOutput) = pop!(to.timer_stack)
 function totmeasured(to::TimerOutput)
     t, b = Int64(0), Int64(0)
     for section in values(to.inner_timers)
-        timedata = section.accumulated_data
-        t += timedata.time
-        b += timedata.allocs
+        t += time(section)
+        b += allocated(section)
     end
     return t, b
 end
@@ -163,15 +157,15 @@ end
 #######
 
 # Accessors
-ncalls(to::TimerOutput)    = to.accumulated_data.ncalls
-allocated(to::TimerOutput) = to.accumulated_data.allocs
-minallocated(to::TimerOutput) = value(to.accumulated_data.allocsseries)[1].min
-maxallocated(to::TimerOutput) = value(to.accumulated_data.allocsseries)[1].max
-quantileallocated(to::TimerOutput) = value(to.accumulated_data.allocsseries)[2][1]
-time(to::TimerOutput) = to.accumulated_data.time
-mintime(to::TimerOutput) = value(to.accumulated_data.timeseries)[1].min
-maxtime(to::TimerOutput) = value(to.accumulated_data.timeseries)[1].max
-quantiletime(to::TimerOutput) = value(to.accumulated_data.timeseries)[2][1]
+ncalls(to::TimerOutput) = nobs(to.accumulated_data.statsgroup)
+allocated(to::TimerOutput) = value(value(to.accumulated_data.statsgroup).allocs)[1]
+minallocated(to::TimerOutput) = value(value(to.accumulated_data.statsgroup).allocs)[2].min
+maxallocated(to::TimerOutput) = value(value(to.accumulated_data.statsgroup).allocs)[2].max
+quantileallocated(to::TimerOutput) = value(value(to.accumulated_data.statsgroup).allocs)[3][1]
+time(to::TimerOutput) = value(value(to.accumulated_data.statsgroup).time)[1]
+mintime(to::TimerOutput) = value(value(to.accumulated_data.statsgroup).time)[2].min
+maxtime(to::TimerOutput) = value(value(to.accumulated_data.statsgroup).time)[2].max
+quantiletime(to::TimerOutput) = value(value(to.accumulated_data.statsgroup).time)[3][1]
 totallocated(to::TimerOutput) = totmeasured(to)[2]
 tottime(to::TimerOutput) = totmeasured(to)[1]
 
@@ -294,19 +288,15 @@ end
 
 function do_accumulate!(accumulated_data, t₀, b₀)
     dt = time_ns() - t₀
-    accumulated_data.time += time_ns() - t₀
-    fit!(accumulated_data.timeseries, dt)
     db = gc_bytes() - b₀
-    accumulated_data.allocs += db
-    fit!(accumulated_data.allocsseries, db)
-    accumulated_data.ncalls += 1
+    fit!(accumulated_data.statsgroup, [dt, db])
 end
 
 
 reset_timer!() = reset_timer!(DEFAULT_TIMER)
 function reset_timer!(to::TimerOutput)
     to.inner_timers = Dict{String,TimerOutput}()
-    to.start_data = TimeData(0, time_ns(), Series(Extrema(), Quantile([0.5])), gc_bytes(), Series(Extrema(), Quantile([0.5])))
+    to.start_data = TimeData(statsgroup(time_ns(), gc_bytes()))
     to.accumulated_data = TimeData()
     to.prev_timer_label = ""
     to.prev_timer = nothing
@@ -377,19 +367,19 @@ function complement!(to::TimerOutput)
     if length(to.inner_timers) == 0
         return nothing
     end
-    tot_time = to.accumulated_data.time
-    tot_allocs = to.accumulated_data.allocs
+    tot_time = time(to)
+    tot_allocs = allocated(to)
     for timer in values(to.inner_timers)
-        tot_time -= timer.accumulated_data.time
-        tot_allocs -= timer.accumulated_data.allocs
+        tot_time -= time(timer)
+        tot_allocs -= allocated(timer)
         complement!(timer)
     end
     tot_time = max(tot_time, 0)
     tot_allocs = max(tot_allocs, 0)
     if !(to.name in ["root", "Flattened"])
         name = string("~", to.name, "~")
-        # TODO: min/max/median don't really have a complement...
-        timer = TimerOutput(to.start_data, TimeData(max(1,to.accumulated_data.ncalls), tot_time, Series(Extrema(), Quantile([0.5])), tot_allocs, Series(Extrema(), Quantile([0.5]))), Dict{String,TimerOutput}(), TimerOutput[], name, false, true, (tot_time, tot_allocs), to.name, to)
+        # TODO: min/max/median don't really have a complement...so this doesn't work yet
+        timer = TimerOutput(to.start_data, TimeData(statsgroup(tot_time, tot_allocs)), Dict{String,TimerOutput}(), TimerOutput[], name, false, true, (tot_time, tot_allocs), to.name, to)
         to.inner_timers[name] = timer
     end
     return to
